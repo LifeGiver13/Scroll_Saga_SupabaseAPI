@@ -1,0 +1,373 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+// ==================== ENUMS ====================
+enum Role {
+  user
+  author
+  admin
+}
+
+enum UserStatus {
+  active
+  banned
+  pending
+}
+
+enum NovelStatus {
+  ongoing
+  completed
+  hiatus
+}
+
+enum LibraryStatus {
+  reading
+  completed
+  plan_to_read
+  dropped
+}
+
+enum ReportStatus {
+  pending
+  reviewed
+  resolved
+  dismissed
+}
+
+// ==================== MODELS ====================
+
+// 1. Users
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  username     String     @unique
+  passwordHash String
+  avatarUrl    String?
+  role         Role       @default(user)
+  bio          String?
+  status       UserStatus @default(active)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  settings       UserSettings?
+  authorProfile  Author?
+  library        Library[]
+  readingHistory ReadingHistory[]
+  reviews        Review[]
+  comments       Comment[]
+  notifications  Notification[]
+  transactions   Transaction[]
+  chapterAccess  ChapterAccess[]
+  follows        AuthorFollower[] @relation("Follower")
+  followedBy     AuthorFollower[] @relation("Followed")
+  likes          Like[]
+  reports        Report[] // reports made by this user
+  adminLogs      AdminLog[]       @relation("AdminActions")
+
+  @@map("users")
+}
+
+// 2. User Settings
+model UserSettings {
+  id                 String   @id @default(uuid())
+  userId             String   @unique
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  theme              String?
+  language           String?  @default("en")
+  emailNotifications Boolean  @default(true)
+  createdAt          DateTime @default(now())
+
+  @@map("user_settings")
+}
+
+// 3. Authors
+model Author {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  penName        String?
+  description    String?
+  website        String?
+  socialLinks    Json?
+  verified       Boolean  @default(false)
+  followersCount Int      @default(0)
+  createdAt      DateTime @default(now())
+
+  novels Novel[]
+
+  @@map("authors")
+}
+
+// 4. Novels
+model Novel {
+  id           String      @id @default(uuid())
+  authorId     String
+  author       Author      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  title        String
+  slug         String      @unique
+  description  String?
+  coverUrl     String?
+  bannerUrl    String?
+  status       NovelStatus @default(ongoing)
+  language     String      @default("en")
+  views        BigInt      @default(0)
+  rating       Decimal?    @default(0.0)
+  ratingCount  Int         @default(0)
+  chapterCount Int         @default(0)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  genres         NovelGenre[]
+  tags           NovelTag[]
+  chapters       Chapter[]
+  libraryEntries Library[]
+  readingHistory ReadingHistory[]
+  reviews        Review[]
+  reports        Report[]
+  searchIndex    NovelSearch?
+
+  @@map("novels")
+}
+
+// 5+6. Genres & Tags (Many-to-Many)
+model Genre {
+  id     String       @id @default(uuid())
+  name   String       @unique
+  novels NovelGenre[]
+
+  @@map("genres")
+}
+
+model NovelGenre {
+  novelId String
+  genreId String
+  novel   Novel  @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  genre   Genre  @relation(fields: [genreId], references: [id], onDelete: Cascade)
+
+  @@id([novelId, genreId])
+  @@map("novel_genres")
+}
+
+model Tag {
+  id     String     @id @default(uuid())
+  name   String
+  novels NovelTag[]
+
+  @@map("tags")
+}
+
+model NovelTag {
+  novelId String
+  tagId   String
+  novel   Novel  @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  tag     Tag    @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([novelId, tagId])
+  @@map("novel_tags")
+}
+
+// 7. Chapters
+model Chapter {
+  id            String    @id @default(uuid())
+  novelId       String
+  novel         Novel     @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  chapterNumber Int
+  title         String
+  content       String?
+  wordCount     Int       @default(0)
+  isLocked      Boolean   @default(false)
+  premiumPrice  Int?
+  views         BigInt    @default(0)
+  publishedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  readingHistory ReadingHistory[]
+  comments       Comment[]
+  access         ChapterAccess[]
+  likes          Like[]           @relation("ChapterLike")
+
+  @@unique([novelId, chapterNumber])
+  @@map("chapters")
+}
+
+// 8. Reading History
+model ReadingHistory {
+  id           String   @id @default(uuid())
+  userId       String
+  novelId      String
+  chapterId    String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel        Novel    @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  chapter      Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  lastPosition Int      @default(0)
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, novelId])
+  @@map("reading_history")
+}
+
+// 9. Library
+model Library {
+  id        String        @id @default(uuid())
+  userId    String
+  novelId   String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel     Novel         @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  status    LibraryStatus @default(reading)
+  createdAt DateTime      @default(now())
+
+  @@unique([userId, novelId])
+  @@map("libraries")
+}
+
+// 10. Reviews
+model Review {
+  id        String   @id @default(uuid())
+  userId    String
+  novelId   String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel     Novel    @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  rating    Int // 1-5
+  title     String?
+  content   String?
+  likes     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  likesLike Like[] @relation("ReviewLike")
+
+  @@unique([userId, novelId])
+  @@map("reviews")
+}
+
+// 11. Comments (nested replies supported)
+model Comment {
+  id        String    @id @default(uuid())
+  userId    String
+  chapterId String
+  parentId  String?
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapter   Chapter   @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  parent    Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies   Comment[] @relation("CommentReplies")
+  content   String
+  likes     Int       @default(0)
+  createdAt DateTime  @default(now())
+
+  likesLike Like[] @relation("CommentLike")
+
+  @@map("comments")
+}
+
+// 12. Likes (Polymorphic)
+model Like {
+  id         String   @id @default(uuid())
+  userId     String
+  targetType String // "chapter", "comment", "review"
+  targetId   String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  // Polymorphic relations with explicit map names to avoid constraint conflicts
+  chapter Chapter? @relation("ChapterLike", fields: [targetId], references: [id], onDelete: Cascade, map: "like_chapter_fkey")
+  comment Comment? @relation("CommentLike", fields: [targetId], references: [id], onDelete: Cascade, map: "like_comment_fkey")
+  review  Review?  @relation("ReviewLike", fields: [targetId], references: [id], onDelete: Cascade, map: "like_review_fkey")
+
+  @@unique([userId, targetType, targetId])
+  @@map("likes")
+}
+
+// 13. Author Followers
+model AuthorFollower {
+  id         String   @id @default(uuid())
+  followerId String
+  authorId   String
+  follower   User     @relation("Follower", fields: [followerId], references: [id], onDelete: Cascade)
+  author     User     @relation("Followed", fields: [authorId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([followerId, authorId])
+  @@map("author_followers")
+}
+
+// 14. Notifications
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+// 15. Transactions
+model Transaction {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount    Decimal
+  currency  String   @default("USD")
+  provider  String
+  status    String
+  createdAt DateTime @default(now())
+
+  @@map("transactions")
+}
+
+// 16. Chapter Access (Premium)
+model ChapterAccess {
+  id          String   @id @default(uuid())
+  userId      String
+  chapterId   String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chapter     Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  purchasedAt DateTime @default(now())
+
+  @@unique([userId, chapterId])
+  @@map("chapter_access")
+}
+
+// 17. Admin Logs
+model AdminLog {
+  id        String   @id @default(uuid())
+  adminId   String
+  admin     User     @relation("AdminActions", fields: [adminId], references: [id], onDelete: Cascade)
+  action    String
+  target    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@map("admin_logs")
+}
+
+// 18. Reports
+model Report {
+  id        String       @id @default(uuid())
+  userId    String
+  novelId   String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  novel     Novel        @relation(fields: [novelId], references: [id], onDelete: Cascade)
+  reason    String
+  status    ReportStatus @default(pending)
+  createdAt DateTime     @default(now())
+
+  @@map("reports")
+}
+
+// 19. Search Index
+model NovelSearch {
+  novelId        String @id
+  searchableText String @db.Text // Changed from TsVector
+
+  novel Novel @relation(fields: [novelId], references: [id], onDelete: Cascade)
+
+  @@map("novel_search")
+}
