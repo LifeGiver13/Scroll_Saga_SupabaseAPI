@@ -18,6 +18,6 @@ router.put(
     uploadProfilePicture
 );
 
-router.delete("/delete/:id", deleteUser);
+router.delete("/user/delete/:id", deleteUser);
 
 export default router;
