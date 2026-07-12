@@ -6,7 +6,7 @@ const app = express();
 app.use(express.json());
 
 // Wire up your authentication routes
-app.use('/api/auth', authRoutes);
+app.use('/api', authRoutes);
 
 // Fallback home route
 app.get('/', (_req, res) => {

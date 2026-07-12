@@ -1,19 +1,27 @@
 import type { Request, Response } from 'express';
 import { PrismaClient, Role, UserStatus } from '@prisma/client';
+import { prisma } from "../config/prisma.js";
 
-import { PrismaPg } from '@prisma/adapter-pg';
-import pg from 'pg';
+import streamifier from "streamifier";
+import cloudinary from "../config/cloudinary.js";
+import { comparePassword, hashPassword } from '../utils/hash.js';
+import { generateToken } from '../utils/jwt.js'; // Adjust path if necessary
 
-// 1. Set up a connection pool using your transaction-mode string
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+// Helper to sanitize user object by removing passwordHash
+function sanitizeUser(user: any) {
+    if (!user) return user;
+    const { passwordHash, ...safeUser } = user;
+    return safeUser;
+}
 
-// 2. Initialize the Prisma Pg driver adapter
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
+// req.params values can type as `string | string[]` (Express allows
+// repeatable route segments), so we normalize to a single string here
+// once, instead of repeating this in every function below.
+function getParamId(req: Request): string | undefined {
+    const raw = req.params.id;
+    return Array.isArray(raw) ? raw[0] : raw;
+}
 
-/**
- * Handles registering a new user
- */
 export const registerUser = async (req: Request, res: Response): Promise<void> => {
     try {
         const { email, username, password } = req.body;
@@ -23,17 +31,43 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
             return;
         }
 
+        // 1. Check if a user with this email or username already exists
+        const existingUser = await prisma.user.findFirst({
+            where: {
+                OR: [
+                    { email },
+                    { username }
+                ]
+            }
+        });
+
+        if (existingUser) {
+            const field = existingUser.email === email ? "Email" : "Username";
+            res.status(400).json({ error: `${field} is already taken` });
+            return;
+        }
+
+
+        // 2. Proceed with registration if email is free
+        const passwordHash = await hashPassword(password);
+
         const newUser = await prisma.user.create({
             data: {
                 email,
                 username,
-                passwordHash: password, // Note: Hash this with bcrypt/argon2 in production!
+                passwordHash,
                 role: Role.user,
                 status: UserStatus.active
             },
         });
 
-        res.status(201).json({ message: "User registered successfully!", user: newUser });
+        const token = generateToken(newUser.id);
+
+        res.status(201).json({
+            message: "User registered successfully!",
+            token,
+            user: sanitizeUser(newUser)
+        });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
@@ -56,13 +90,221 @@ export const loginUser = async (req: Request, res: Response): Promise<void> => {
             where: { username }
         });
 
-        if (!user || user.passwordHash !== password) {
+        if (!user) {
             res.status(401).json({ error: "Invalid username or password" });
             return;
         }
 
-        res.status(200).json({ message: "Login successful!", userId: user.id });
+        const passwordMatches = await comparePassword(password, user.passwordHash);
+
+        if (!passwordMatches) {
+            res.status(401).json({ error: "Invalid username or password" });
+            return;
+        }
+
+        // Generate token upon verified authentication
+        const token = generateToken(user.id);
+
+        res.status(200).json({
+            message: "Login successful!",
+            token,
+            user: sanitizeUser(user)
+        });
     } catch (error: any) {
         res.status(500).json({ error: error.message });
+    }
+};
+
+export const uploadProfilePicture = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const id = getParamId(req);
+
+        if (!id) {
+            res.status(400).json({
+                error: "User id is required in the URL"
+            });
+            return;
+        }
+
+        if (!req.file) {
+            res.status(400).json({
+                error: "No image uploaded"
+            });
+            return;
+        }
+
+        const result = await new Promise<any>((resolve, reject) => {
+            const stream = cloudinary.uploader.upload_stream(
+                {
+                    folder: "avatars"
+                },
+                (error, result) => {
+                    if (error) reject(error);
+                    else resolve(result);
+                }
+            );
+
+            streamifier.createReadStream(req.file!.buffer)
+                .pipe(stream);
+        });
+
+        const user = await prisma.user.update({
+            where: {
+                id
+            },
+            data: {
+                avatarUrl: result.secure_url
+            }
+        });
+
+        res.json(sanitizeUser(user));
+
+    } catch (err: any) {
+        res.status(500).json({
+            error: err.message
+        });
+    }
+};
+
+export const changePassword = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const id = getParamId(req);
+
+        if (!id) {
+            res.status(400).json({
+                error: "User id is required in the URL"
+            });
+            return;
+        }
+
+        const {
+            currentPassword,
+            newPassword
+        } = req.body;
+
+        if (!currentPassword || !newPassword) {
+            res.status(400).json({
+                error: "currentPassword and newPassword are required"
+            });
+            return;
+        }
+
+        const user = await prisma.user.findUnique({
+            where: { id }
+        });
+
+        if (!user) {
+            res.status(404).json({
+                error: "User not found"
+            });
+            return;
+        }
+
+        const valid = await comparePassword(
+            currentPassword,
+            user.passwordHash
+        );
+
+        if (!valid) {
+            res.status(401).json({
+                error: "Current password incorrect"
+            });
+            return;
+        }
+
+        const hash = await hashPassword(newPassword);
+
+        await prisma.user.update({
+            where: { id },
+            data: {
+                passwordHash: hash
+            }
+        });
+
+        res.json({
+            message: "Password changed successfully."
+        });
+
+    } catch (error: any) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+};
+
+export const updateUser = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const id = getParamId(req);
+
+        if (!id) {
+            res.status(400).json({
+                error: "User id is required in the URL"
+            });
+            return;
+        }
+
+        const {
+            username,
+            email,
+            bio
+        } = req.body;
+
+        const user = await prisma.user.update({
+            where: {
+                id
+            },
+            data: {
+                username,
+                email,
+                bio
+            }
+        });
+
+        res.json(sanitizeUser(user));
+
+    } catch (error: any) {
+        res.status(500).json({
+            error: error.message
+        });
+    }
+};
+
+export const deleteUser = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const id = getParamId(req);
+
+        if (!id) {
+            res.status(400).json({
+                error: "User id is required in the URL"
+            });
+            return;
+        }
+
+        await prisma.user.delete({
+            where: {
+                id
+            }
+        });
+
+        res.json({
+            message: "User deleted."
+        });
+
+    } catch (error: any) {
+        res.status(500).json({
+            error: error.message
+        });
     }
 };
