@@ -190,7 +190,7 @@ export const changePassword = async (
 
         if (!currentPassword || !newPassword) {
             res.status(400).json({
-                error: "currentPassword and newPassword are required"
+                error: "Current Password and New Password are required"
             });
             return;
         }
@@ -258,6 +258,26 @@ export const updateUser = async (
             bio
         } = req.body;
 
+        // 1. Check if the new username or email is already taken by ANOTHER user
+        if (email || username) {
+            const conflictingUser = await prisma.user.findFirst({
+                where: {
+                    id: { not: id }, // Exclude the current user making the update
+                    OR: [
+                        ...(email ? [{ email }] : []),
+                        ...(username ? [{ username }] : [])
+                    ]
+                }
+            });
+
+            if (conflictingUser) {
+                const field = conflictingUser.email === email ? "Email" : "Username";
+                res.status(400).json({ error: `${field} is already taken by another user` });
+                return;
+            }
+        }
+
+        // 2. If valid, proceed with update
         const user = await prisma.user.update({
             where: {
                 id
