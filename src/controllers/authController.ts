@@ -323,3 +323,79 @@ export const deleteUser = async (
         });
     }
 };
+
+export const getUsers = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const { search } = req.query;
+
+        const users = await prisma.user.findMany({
+            where: {
+                ...(search
+                    ? {
+                        OR: [
+                            {
+                                username: {
+                                    contains: String(search),
+                                    mode: "insensitive",
+                                },
+                            },
+                            {
+                                email: {
+                                    contains: String(search),
+                                    mode: "insensitive",
+                                },
+                            },
+                        ],
+                    }
+                    : {}),
+            },
+            orderBy: {
+                createdAt: "desc",
+            },
+        });
+
+        res.json(users.map(sanitizeUser));
+    } catch (error: any) {
+        res.status(500).json({
+            error: error.message,
+        });
+    }
+};
+
+export const getUserById = async (
+    req: Request,
+    res: Response
+): Promise<void> => {
+    try {
+        const id = getParamId(req);
+
+        if (!id) {
+            res.status(400).json({
+                error: "User id is required in the URL",
+            });
+            return;
+        }
+
+        const user = await prisma.user.findUnique({
+            where: {
+                id,
+            },
+        });
+
+        if (!user) {
+            res.status(404).json({
+                error: "User not found",
+            });
+            return;
+        }
+
+        res.json(sanitizeUser(user));
+    } catch (error: any) {
+        res.status(500).json({
+            error: error.message,
+        });
+    }
+};

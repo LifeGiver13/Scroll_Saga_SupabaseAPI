@@ -5,7 +5,9 @@ import {
     uploadProfilePicture,
     updateUser,
     changePassword,
-    deleteUser
+    deleteUser,
+    getUsers,
+    getUserById
 } from '../controllers/authController.js';
 import {
     createNovel,
@@ -58,6 +60,10 @@ router.post('/auth/register', registerUser);
 router.post('/auth/login', loginUser);
 
 // ================= USER ACCOUNT =====================
+router.get("/users", getUsers);
+router.get("/users/:id", getUserById);
+
+
 router.put("/user/update/:id", updateUser);
 router.put("/user/change-password/:id", changePassword);
 router.put(
