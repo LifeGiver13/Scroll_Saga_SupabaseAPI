@@ -37,6 +37,18 @@ import {
     createTag,
     deleteTag
 } from '../controllers/tagController.js';
+
+import {
+    createChapter,
+    getChaptersByNovel,
+    getChapterById,
+    updateChapter,
+    deleteChapter,
+    publishChapter,
+    grantChapterAccess,
+    checkChapterAccess
+} from "../controllers/chaptersController.js";
+
 import { upload } from '../middleware/upload.js';
 
 const router = Router();
@@ -87,5 +99,24 @@ router.delete("/genres/:id", deleteGenre);
 router.get("/tags", getTags);
 router.post("/tags", createTag);
 router.delete("/tags/:id", deleteTag);
+
+
+// ====================== CHAPTERS ======================
+
+// CRUD
+router.post("/novels/:novelId/chapters", createChapter);
+router.get("/novels/:novelId/chapters", getChaptersByNovel);
+
+router.get("/chapters/:id", getChapterById);
+router.put("/chapters/:id", updateChapter);
+router.delete("/chapters/:id", deleteChapter);
+
+// Publishing
+router.put("/chapters/:id/publish", publishChapter);
+
+// Access Management
+router.post("/chapters/:id/access", grantChapterAccess);
+router.get("/chapters/:id/access/:userId", checkChapterAccess);
+
 
 export default router;
