@@ -184,13 +184,20 @@ export const changePassword = async (
         }
 
         const {
-            currentPassword,
-            newPassword
+            newPassword,
+            confirmPassword
         } = req.body;
 
-        if (!currentPassword || !newPassword) {
+        if (!newPassword || !confirmPassword) {
             res.status(400).json({
-                error: "Current Password and New Password are required"
+                error: "New Password and Confirm Password are required"
+            });
+            return;
+        }
+
+        if (newPassword !== confirmPassword) {
+            res.status(400).json({
+                error: "New passwords do not match"
             });
             return;
         }
@@ -202,18 +209,6 @@ export const changePassword = async (
         if (!user) {
             res.status(404).json({
                 error: "User not found"
-            });
-            return;
-        }
-
-        const valid = await comparePassword(
-            currentPassword,
-            user.passwordHash
-        );
-
-        if (!valid) {
-            res.status(401).json({
-                error: "Current password incorrect"
             });
             return;
         }
