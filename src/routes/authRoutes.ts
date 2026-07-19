@@ -16,6 +16,7 @@ import {
     updateNovel,
     deleteNovel,
     uploadNovelCover,
+    incrementNovelView,
     attachGenreToNovel,
     removeGenreFromNovel,
     attachTagToNovel,
@@ -39,7 +40,6 @@ import {
     createTag,
     deleteTag
 } from '../controllers/tagController.js';
-
 import {
     createChapter,
     getChaptersByNovel,
@@ -50,7 +50,11 @@ import {
     grantChapterAccess,
     checkChapterAccess
 } from "../controllers/chaptersController.js";
-
+import {
+    likeTarget,
+    unlikeTarget,
+    getLikeStatus
+} from "../controllers/likeController.js";
 import { upload } from '../middleware/upload.js';
 
 const router = Router();
@@ -62,8 +66,6 @@ router.post('/auth/login', loginUser);
 // ================= USER ACCOUNT =====================
 router.get("/users", getUsers);
 router.get("/users/:id", getUserById);
-
-
 router.put("/user/update/:id", updateUser);
 router.put("/user/change-password/:id", changePassword);
 router.put(
@@ -82,7 +84,9 @@ router.put("/authors/:id", updateAuthor);
 router.delete("/authors/:id", deleteAuthor);
 
 // ======================= NOVELS ======================
-router.post("/novels", createNovel);
+// NOTE: createNovel now accepts multipart/form-data — cover file (field
+// "cover") + genreIds/tagIds can all be sent in this one request.
+router.post("/novels", upload.single("cover"), createNovel);
 router.get("/novels", getNovels);
 router.get("/novels/:id", getNovelById);
 router.put("/novels/:id", updateNovel);
@@ -92,6 +96,7 @@ router.put(
     upload.single("cover"),
     uploadNovelCover
 );
+router.post("/novels/:id/view", incrementNovelView);
 router.post("/novels/:id/genres", attachGenreToNovel);
 router.delete("/novels/:id/genres/:genreId", removeGenreFromNovel);
 router.post("/novels/:id/tags", attachTagToNovel);
@@ -106,23 +111,19 @@ router.get("/tags", getTags);
 router.post("/tags", createTag);
 router.delete("/tags/:id", deleteTag);
 
-
 // ====================== CHAPTERS ======================
-
-// CRUD
 router.post("/novels/:novelId/chapters", createChapter);
 router.get("/novels/:novelId/chapters", getChaptersByNovel);
-
 router.get("/chapters/:id", getChapterById);
 router.put("/chapters/:id", updateChapter);
 router.delete("/chapters/:id", deleteChapter);
-
-// Publishing
 router.put("/chapters/:id/publish", publishChapter);
-
-// Access Management
 router.post("/chapters/:id/access", grantChapterAccess);
 router.get("/chapters/:id/access/:userId", checkChapterAccess);
 
+// ======================= LIKES =======================
+router.post("/likes/:targetType/:targetId", likeTarget);
+router.delete("/likes/:targetType/:targetId", unlikeTarget);
+router.get("/likes/:targetType/:targetId", getLikeStatus);
 
 export default router;
