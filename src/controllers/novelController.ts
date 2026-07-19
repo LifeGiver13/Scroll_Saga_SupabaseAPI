@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { NovelStatus } from '@prisma/client';
 import { prisma } from "../config/prisma.js";
+import { serializeBigInts } from "../utils/serializeBigInts.js";
 
 import streamifier from "streamifier";
 import cloudinary from "../config/cloudinary.js";
@@ -38,14 +39,6 @@ async function generateUniqueSlug(title: string): Promise<string> {
 /**
  * POST /novels
  * body: { title, description?, authorId, language?, status? }
- *
- * NOTE: authorId here is the Author table's id (authors.id), NOT the
- * user's id — a User only has one Author row if they've set up an
- * author profile. Right now this trusts whatever authorId is passed in
- * the body, same pattern as your other controllers (no auth middleware
- * yet) — once you attach requireAuth to this route, swap this for
- * looking up `prisma.author.findUnique({ where: { userId: req.user.id } })`
- * so people can only create novels under their own author profile.
  */
 export const createNovel = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -80,7 +73,7 @@ export const createNovel = async (req: Request, res: Response): Promise<void> =>
             include: { author: true },
         });
 
-        res.status(201).json(novel);
+        res.status(201).json(serializeBigInts(novel));
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
@@ -106,7 +99,7 @@ export const getNovels = async (req: Request, res: Response): Promise<void> => {
             orderBy: { createdAt: "desc" },
         });
 
-        res.json(novels);
+        res.json(serializeBigInts(novels));
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
@@ -139,7 +132,7 @@ export const getNovelById = async (req: Request, res: Response): Promise<void> =
             return;
         }
 
-        res.json(novel);
+        res.json(serializeBigInts(novel));
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
@@ -148,11 +141,6 @@ export const getNovelById = async (req: Request, res: Response): Promise<void> =
 /**
  * PUT /novels/:id
  * body: { title?, description?, language?, status? }
- *
- * Note: this does NOT regenerate the slug when the title changes, on
- * purpose — changing a novel's URL slug after people have already
- * bookmarked/shared it breaks links. Add a separate explicit action
- * later if you want slug changes to be possible.
  */
 export const updateNovel = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -176,7 +164,7 @@ export const updateNovel = async (req: Request, res: Response): Promise<void> =>
             include: { author: true },
         });
 
-        res.json(novel);
+        res.json(serializeBigInts(novel));
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
@@ -205,8 +193,6 @@ export const deleteNovel = async (req: Request, res: Response): Promise<void> =>
 /**
  * PUT /novels/:id/cover
  * multipart field name: "cover"
- * Same streamifier -> Cloudinary -> save URL pattern as uploadProfilePicture,
- * just pointed at the "covers" folder and novel.coverUrl instead.
  */
 export const uploadNovelCover = async (req: Request, res: Response): Promise<void> => {
     try {
@@ -239,7 +225,7 @@ export const uploadNovelCover = async (req: Request, res: Response): Promise<voi
             data: { coverUrl: result.secure_url },
         });
 
-        res.json(novel);
+        res.json(serializeBigInts(novel));
     } catch (err: any) {
         res.status(500).json({ error: err.message });
     }
